@@ -128,9 +128,9 @@ async function extractDetailedData(page) {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
     let allData = []; // Toàn bộ dữ liệu (để lưu file local)
-    let buffer = [];  // Bộ nhớ đệm để gửi n8n (30 mục)
+    let buffer = [];  // Bộ nhớ đệm để gửi n8n (40 mục)
     const total = targetUrls.length;
-    const batchSizeForN8n = 30;
+    const batchSizeForN8n = 40;
 
     async function sendBatch(dataToSend, currentCount, maxRetries = 3) {
         const batchNum = Math.ceil(currentCount / batchSizeForN8n);
