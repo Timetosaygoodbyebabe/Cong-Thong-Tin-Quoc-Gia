@@ -128,6 +128,17 @@ async function extractDetailedData(page) {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
     let allData = []; // Toàn bộ dữ liệu (để lưu file local)
+    
+    if (fs.existsSync('dichvucong_data_production.json')) {
+        try {
+            allData = JSON.parse(fs.readFileSync('dichvucong_data_production.json', 'utf-8'));
+            console.log(`Đã load ${allData.length} dữ liệu cào từ trước.`);
+        } catch(e) {}
+    }
+    const scrapedUrls = new Set(allData.map(d => d.url));
+    targetUrls = targetUrls.filter(url => !scrapedUrls.has(url));
+    console.log(`Còn lại ${targetUrls.length} URL cần cào tiếp...`);
+
     let buffer = [];  // Bộ nhớ đệm để gửi n8n (40 mục)
     const total = targetUrls.length;
     const batchSizeForN8n = 40;
