@@ -4,9 +4,9 @@ const path = require('path');
 
 async function getLinks() {
     const urlsToCrawl = [
+        "https://dichvucong.gov.vn/tra-cuu-thu-tuc/danh-sach?showAdvanced=true&searchType=MINISTRY&formalityType=STANDARD&implementingLevel=UNKNOWN&limit=10&activeKey=STANDARD",
         "https://dichvucong.gov.vn/tra-cuu-thu-tuc/danh-sach?showAdvanced=true&searchType=PROVINCE&formalityType=STANDARD&province=H17&implementingLevel=PROVINCE&limit=10&activeKey=STANDARD",
-        "https://dichvucong.gov.vn/tra-cuu-thu-tuc/danh-sach?showAdvanced=true&searchType=PROVINCE&formalityType=STANDARD&province=H17&implementingLevel=COMMUNE&limit=10&activeKey=STANDARD",
-        "https://dichvucong.gov.vn/tra-cuu-thu-tuc/danh-sach?showAdvanced=true&searchType=MINISTRY&formalityType=STANDARD&implementingLevel=MINISTRY&limit=10&activeKey=STANDARD"
+        "https://dichvucong.gov.vn/tra-cuu-thu-tuc/danh-sach?showAdvanced=true&searchType=PROVINCE&formalityType=STANDARD&province=H17&implementingLevel=COMMUNE&limit=10&activeKey=STANDARD"
     ];
 
     const browser = await puppeteer.launch({ headless: "new", args: ['--no-sandbox'] });
