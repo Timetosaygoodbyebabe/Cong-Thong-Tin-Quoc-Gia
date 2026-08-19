@@ -3,11 +3,15 @@ const fs = require('fs');
 const path = require('path');
 
 async function getLinks() {
-    const urlsToCrawl = [
-        "https://dichvucong.gov.vn/tra-cuu-thu-tuc/danh-sach?showAdvanced=true&searchType=MINISTRY&formalityType=STANDARD&implementingLevel=UNKNOWN&limit=10&activeKey=STANDARD",
-        "https://dichvucong.gov.vn/tra-cuu-thu-tuc/danh-sach?showAdvanced=true&searchType=PROVINCE&formalityType=STANDARD&province=H17&implementingLevel=PROVINCE&limit=10&activeKey=STANDARD",
-        "https://dichvucong.gov.vn/tra-cuu-thu-tuc/danh-sach?showAdvanced=true&searchType=PROVINCE&formalityType=STANDARD&province=H17&implementingLevel=COMMUNE&limit=10&activeKey=STANDARD"
-    ];
+    const formalityTypes = ['STANDARD', 'INTERCONNECTED'];
+    let urlsToCrawl = [];
+    
+    for (let fType of formalityTypes) {
+        // Đà Nẵng
+        urlsToCrawl.push(`https://dichvucong.gov.vn/tra-cuu-thu-tuc/danh-sach?showAdvanced=true&searchType=PROVINCE&formalityType=${fType}&province=H17&limit=10&activeKey=${fType}`);
+        // Bộ ngành
+        urlsToCrawl.push(`https://dichvucong.gov.vn/tra-cuu-thu-tuc/danh-sach?showAdvanced=true&searchType=MINISTRY&formalityType=${fType}&implementingLevel=MINISTRY&limit=10&activeKey=${fType}`);
+    }
 
     const browser = await puppeteer.launch({ headless: "new", args: ['--no-sandbox'] });
     const page = await browser.newPage();
@@ -16,45 +20,66 @@ async function getLinks() {
     const csvPath = path.join(__dirname, 'crawl_tthc', 'danhsach.csv');
     let allLinks = ["url"]; // Dòng tiêu đề CSV
     
-    // Đọc file CSV cũ để không mất dữ liệu
-    if (fs.existsSync(csvPath)) {
-        const existingData = fs.readFileSync(csvPath, 'utf-8');
-        allLinks = existingData.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-    }
+    // Tạm bỏ chức năng đọc file cũ để lấy lại đúng link 2 URL này theo yêu cầu của user
 
     for (let url of urlsToCrawl) {
         console.log("Đang truy cập trang chủ để lấy Session:", url);
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-        await new Promise(r => setTimeout(r, 2000));
+        let retries = 3;
+        while(retries > 0) {
+            try {
+                await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+                await new Promise(r => setTimeout(r, 2000));
+                break;
+            } catch (e) {
+                console.log(`Lỗi truy cập ${url}: ${e.message}. Đang thử lại...`);
+                retries--;
+                if(retries === 0) throw e;
+                await new Promise(r => setTimeout(r, 5000));
+            }
+        }
         
         const urlObj = new URL(url);
         const searchType = urlObj.searchParams.get('searchType') || "PROVINCE";
         const departmentCode = urlObj.searchParams.get('province') || "";
-        const level = urlObj.searchParams.get('implementingLevel') || "PROVINCE";
+        const level = urlObj.searchParams.get('implementingLevel') || "UNKNOWN";
+        const formalityType = urlObj.searchParams.get('formalityType') || "STANDARD";
         
-        console.log(`Đang chạy API nội bộ quét toàn bộ link (searchType: ${searchType}, level: ${level})...`);
-        const result = await page.evaluate(async (dept, lvl, type) => {
+        console.log(`Đang chạy API nội bộ quét toàn bộ link (searchType: ${searchType}, level: ${level}, formalityType: ${formalityType})...`);
+        const result = await page.evaluate(async (dept, lvl, type, fType) => {
             let items = [];
             let lastId = "";
             let hasMore = true;
             
             while (hasMore) {
-                const res = await fetch('/api/v1/submitting/formality/list-all-public-formality-by-citizen', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        "limit": 100,
-                        "lastId": lastId,
-                        "q": "",
-                        "categoryId": "",
-                        "departmentCode": dept,
-                        "type": type,
-                        "level": lvl,
-                        "formalityType": "STANDARD"
-                    })
-                });
+                let data = null;
+                let fetchRetries = 5;
+                while (fetchRetries > 0) {
+                    try {
+                        const res = await fetch('/api/v1/submitting/formality/list-all-public-formality-by-citizen', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                "limit": 100,
+                                "lastId": lastId,
+                                "q": "",
+                                "categoryId": "",
+                                "departmentCode": dept,
+                                "type": type,
+                                "level": lvl,
+                                "formalityType": fType
+                            })
+                        });
+                        
+                        data = await res.json();
+                        break; // Success!
+                    } catch (err) {
+                        console.error('Fetch lỗi, đang thử lại...', err.message);
+                        fetchRetries--;
+                        if(fetchRetries === 0) throw err;
+                        await new Promise(r => setTimeout(r, 5000));
+                    }
+                }
                 
-                const data = await res.json();
                 const newItems = data?.data?.items || [];
                 if (newItems.length === 0) {
                     hasMore = false;
@@ -65,7 +90,7 @@ async function getLinks() {
                 }
             }
             return items.map(item => `https://dichvucong.gov.vn/thu-tuc-hanh-chinh/${item.id}`);
-        }, departmentCode, level, searchType);
+        }, departmentCode, level, searchType, formalityType);
         
         console.log(`-> Tìm thấy ${result.length} link thủ tục.`);
         allLinks = allLinks.concat(result);
@@ -73,10 +98,18 @@ async function getLinks() {
 
     await browser.close();
 
-    const uniqueLinks = [...new Set(allLinks)];
-    fs.writeFileSync(csvPath, uniqueLinks.join('\n'), 'utf-8');
+    const uniqueLinksSet = new Set(allLinks);
     
-    console.log(`\nHoàn tất! Tổng cộng đang có ${uniqueLinks.length - 1} link duy nhất trong file danhsach.csv`);
+    // Add 5 manual interconnected links
+    uniqueLinksSet.add("https://dichvucong.gov.vn/thu-tuc-hanh-chinh-lien-thong/234778");
+    uniqueLinksSet.add("https://dichvucong.gov.vn/thu-tuc-hanh-chinh-lien-thong/341088");
+    uniqueLinksSet.add("https://dichvucong.gov.vn/thu-tuc-hanh-chinh-lien-thong/341089");
+    uniqueLinksSet.add("https://dichvucong.gov.vn/thu-tuc-hanh-chinh-lien-thong/409857");
+    uniqueLinksSet.add("https://dichvucong.gov.vn/thu-tuc-hanh-chinh-lien-thong/420163");
+
+    fs.writeFileSync(csvPath, [...uniqueLinksSet].join('\n'), 'utf-8');
+    
+    console.log(`\nHoàn tất! Tổng cộng đang có ${uniqueLinksSet.size - 1} link duy nhất trong file danhsach.csv`);
 }
 
 getLinks().catch(console.error);
